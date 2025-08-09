@@ -1,0 +1,8 @@
+# Runtime dependencies for LanWatch
+scapy>=2.6.1
+netaddr>=1.3.0
+manuf>=1.1.5
+
+# Development dependencies
+pytest>=7.0.0
+ruff>=0.1.0

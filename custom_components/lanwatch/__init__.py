@@ -373,22 +373,40 @@ def detect_device_type_and_os(
 
 
 def get_vendor_from_mac(mac: str) -> str:
-    """Get vendor name from MAC address using OUI lookup."""
+    """Get vendor name from MAC address using manuf library first, fallback to netaddr."""
+    vendor = ""
+    
+    # Try manuf library first for better/more readable names
     try:
-        from netaddr import EUI, NotRegisteredError
-
-        eui = EUI(mac)
+        import manuf
+        
+        p = manuf.MacParser()
+        result = p.get_manuf(mac)
+        if result:
+            vendor = result
+            _LOGGER.debug("Got vendor from manuf for %s: %s", mac, vendor)
+    except Exception as e:
+        _LOGGER.debug("Manuf lookup failed for %s: %s", mac, e)
+    
+    # Fallback to netaddr if manuf didn't work
+    if not vendor:
         try:
-            vendor = eui.oui.registration().org
-            # Clean up common vendor name patterns
-            vendor = vendor.replace(" Inc.", "").replace(" Corporation", "")
-            vendor = vendor.replace(" Co., Ltd.", "").replace(" Co.,Ltd.", "")
-            vendor = vendor.replace(" Technology", "").replace(" Electronics", "")
-            return vendor
-        except NotRegisteredError:
-            return ""
-    except Exception:  # noqa: BLE001
-        return ""
+            from netaddr import EUI, NotRegisteredError
+
+            eui = EUI(mac)
+            try:
+                vendor = eui.oui.registration().org
+                # Clean up common vendor name patterns
+                vendor = vendor.replace(" Inc.", "").replace(" Corporation", "")
+                vendor = vendor.replace(" Co., Ltd.", "").replace(" Co.,Ltd.", "")
+                vendor = vendor.replace(" Technology", "").replace(" Electronics", "")
+                _LOGGER.debug("Got vendor from netaddr for %s: %s", mac, vendor)
+            except NotRegisteredError:
+                pass
+        except Exception:  # noqa: BLE001
+            pass
+    
+    return vendor
 
 
 def get_mdns_name(ip: str) -> tuple[str, dict[str, str]]:
