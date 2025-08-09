@@ -25,12 +25,22 @@ def test_device_info_dataclass():
         mac="AA:BB:CC:DD:EE:FF",
         last_seen=datetime.now(),
         vendor="Test Vendor",
+        device_type="computer",
+        os_hint="Linux",
+        open_ports=[22, 80],
+        dhcp_info={"hostname": "test-device"},
+        capabilities=["ssh", "web"]
     )
 
     assert device.ip == "192.168.1.100"
     assert device.name == "test-device"
     assert device.mac == "AA:BB:CC:DD:EE:FF"
     assert device.vendor == "Test Vendor"
+    assert device.device_type == "computer"
+    assert device.os_hint == "Linux"
+    assert device.open_ports == [22, 80]
+    assert device.dhcp_info == {"hostname": "test-device"}
+    assert device.capabilities == ["ssh", "web"]
 
 
 def test_perform_arp_scan_with_mock():
@@ -39,17 +49,21 @@ def test_perform_arp_scan_with_mock():
         # Mock ARP response
         mock_response = MagicMock()
         mock_response.psrc = "192.168.1.50"
-        mock_response.src_mac = "AA:BB:CC:DD:EE:FF"
+        mock_response.hwsrc = "AA:BB:CC:DD:EE:FF"
 
-        mock_arping.return_value = ([(None, mock_response)], None)
+        mock_arping.return_value = ([(None, mock_response)], [])
 
         with patch("socket.gethostbyaddr") as mock_dns:
             mock_dns.return_value = ("test-host.local", [], [])
+            
+            with patch("custom_components.lanwatch.monitor_dhcp_packets", return_value={}):
+                results = perform_arp_scan(["192.168.1.0/24"])
 
-            results = perform_arp_scan(["192.168.1.0/24"])
-
-            assert "AA:BB:CC:DD:EE:FF" in results
-            assert results["AA:BB:CC:DD:EE:FF"] == ("192.168.1.50", "test-host.local")
+                assert "AA:BB:CC:DD:EE:FF" in results
+                # Check first 3 elements of tuple (ip, name, vendor)
+                result_tuple = results["AA:BB:CC:DD:EE:FF"]
+                assert result_tuple[0] == "192.168.1.50"
+                assert result_tuple[1] == "test-host.local"
 
 
 def test_perform_arp_scan_invalid_subnet():
@@ -68,18 +82,20 @@ def test_perform_arp_scan_with_dns_failure():
     class Pkt:
         def __init__(self, ip, mac) -> None:
             self.psrc = ip
-            self.src_mac = mac
+            self.hwsrc = mac
 
-    def fake_arping(_net, timeout=3, verbose=0):  # noqa: ARG001
-        return ([(None, Pkt("192.168.1.50", "AA:BB:CC:DD:EE:FF"))], None)
+    def fake_arping(_net, timeout=3, verbose=0, retry=2):  # noqa: ARG001
+        return ([(None, Pkt("192.168.1.50", "AA:BB:CC:DD:EE:FF"))], [])
 
-    with patch("scapy.all.arping", side_effect=fake_arping), patch(
-        "socket.gethostbyaddr",
-        side_effect=Exception("DNS lookup failed"),
-    ):
+    with patch("scapy.all.arping", side_effect=fake_arping), \
+         patch("socket.gethostbyaddr", side_effect=Exception("DNS lookup failed")), \
+         patch("custom_components.lanwatch.monitor_dhcp_packets", return_value={}):
         pairs = perform_arp_scan(["192.168.1.0/24"])
         # Should still return the device with empty hostname
-        assert pairs == {"AA:BB:CC:DD:EE:FF": ("192.168.1.50", "")}
+        assert "AA:BB:CC:DD:EE:FF" in pairs
+        result_tuple = pairs["AA:BB:CC:DD:EE:FF"]
+        assert result_tuple[0] == "192.168.1.50"
+        assert result_tuple[1] == ""  # Empty hostname
 
 
 def test_domain_constant():
@@ -108,10 +124,12 @@ pytestmark = pytest.mark.asyncio
 )
 async def test_setup_and_entity_creation(hass: HomeAssistant) -> None:
     """Test component setup and entity creation."""
-    # Fake scan results
+    # Fake scan results - return tuple with all new fields
     with patch(
         "custom_components.lanwatch.__init__.perform_arp_scan",
-        return_value={"AA:BB:CC:DD:EE:FF": ("192.168.1.50", "host1.local")},
+        return_value={
+            "AA:BB:CC:DD:EE:FF": ("192.168.1.50", "host1.local", "", {}, "", "", [], {}, [])
+        },
     ):
         entry = hass.config_entries.async_create_entry(
             domain=DOMAIN,

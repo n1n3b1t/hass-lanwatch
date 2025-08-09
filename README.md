@@ -1,11 +1,13 @@
-# LanWatch – Native Home Assistant LAN Device Tracker
+# LanWatch – Advanced Home Assistant LAN Device Tracker
 
-LanWatch is a custom component for Home Assistant that automatically discovers and tracks devices on your local network using ARP scanning. It creates `device_tracker` entities for each discovered device with real-time presence detection.
+LanWatch is a custom component for Home Assistant that automatically discovers and tracks devices on your local network using advanced network scanning techniques. It creates intelligent `device_tracker` entities with comprehensive device information and real-time presence detection.
 
 ## Features
 
-- **Automatic device discovery** - Scans your network and creates entities for all devices
+- **Smart device discovery** - Automatically identifies device types and operating systems
+- **Advanced fingerprinting** - Uses DHCP, mDNS, port scanning, and MAC OUI analysis
 - **Real-time presence detection** - Tracks when devices connect and disconnect  
+- **Rich device information** - Shows device type, OS, open ports, and network services
 - **Persistent device memory** - Remembers devices even when they're offline
 - **No external dependencies** - Runs entirely within Home Assistant (no Docker/MQTT needed)
 - **Multiple subnet support** - Monitor devices across VLANs
@@ -38,10 +40,41 @@ During setup, you'll configure:
 
 ### Entities
 
-LanWatch creates `device_tracker` entities for each discovered device:
-- Entity ID: `device_tracker.lanwatch_[mac_address]`
-- States: `home` (connected) or `not_home` (disconnected)
-- Attributes: IP address, hostname, MAC address, last seen time, vendor
+LanWatch creates intelligent `device_tracker` entities for each discovered device:
+- **Entity ID**: `device_tracker.lanwatch_[mac_address]`
+- **States**: `home` (connected) or `not_home` (disconnected)
+- **Device Info**:
+  - Name: Intelligently generated from DHCP/mDNS data
+  - Manufacturer: Vendor identification from MAC OUI
+  - Model: Device type with OS (e.g., "Phone (iOS)", "Computer (Windows)")
+
+#### Enhanced Attributes
+- **Basic Info**: `ip`, `mac`, `hostname`, `vendor`
+- **Device Classification**: `device_type`, `os` 
+- **Network Services**: `open_ports`, `capabilities`, `mdns_services`
+- **DHCP Info**: `dhcp_hostname`, `dhcp_vendor_class`
+- **Timing**: `last_seen`, `last_seen_seconds_ago`
+
+#### Device Types Detected
+- `computer` - Desktops, laptops, servers
+- `phone` - Smartphones
+- `tablet` - iPads, Android tablets
+- `tv` - Smart TVs, streaming devices
+- `speaker` - Smart speakers (Alexa, Google Home, Sonos)
+- `iot` - IoT devices (ESPHome, sensors)
+- `printer` - Network printers
+- `nas` - Network storage devices
+- `network` - Routers, switches, access points
+- `media_player` - Chromecast, Apple TV
+- `game_console` - PlayStation, Xbox
+- `watch` - Smartwatches
+
+#### Operating Systems Detected
+- Mobile: `iOS`, `iPadOS`, `Android`
+- Computer: `Windows`, `macOS`, `Linux`, `Chrome OS`
+- Smart TV: `Tizen`, `webOS`, `Android TV`, `Roku OS`
+- IoT: `ESPHome`, `Tasmota`, `ESP32/ESP8266`
+- Other: `Alexa`, `Google Cast`, `Sonos`, `HomeKit`
 
 ### Service
 
@@ -70,8 +103,10 @@ filter:
         entities:
           - attribute: ip
             name: IP
-          - attribute: hostname
-            name: Host
+          - attribute: device_type
+            name: Type
+          - attribute: os
+            name: OS
           - attribute: last_seen_seconds_ago
             name: Seen
             format: relative
@@ -80,7 +115,7 @@ sort:
 show_empty: false
 ```
 
-#### Simple Markdown Table
+#### Enhanced Markdown Table
 
 ```yaml
 type: markdown
@@ -91,10 +126,10 @@ content: |
      | list %}
   **Online:** {{ trackers | selectattr('state', 'eq', 'home') | list | count }} / {{ trackers | count }}
   
-  | Device | IP | Status |
-  |--------|-----|--------|
+  | Device | Type | OS | IP | Status |
+  |--------|------|----|----|--------|
   {% for d in trackers | sort(attribute='attributes.ip') %}
-  | {{ d.name }} | {{ d.attributes.ip or 'N/A' }} | {{ d.state }} |
+  | {{ d.name }} | {{ d.attributes.device_type | default('unknown') }} | {{ d.attributes.os | default('-') }} | {{ d.attributes.ip or 'N/A' }} | {{ d.state }} |
   {% endfor %}
 ```
 
@@ -113,7 +148,7 @@ template:
 
 ### Automations
 
-#### New Device Alert
+#### New Device Alert with Type Detection
 
 ```yaml
 automation:
@@ -130,25 +165,96 @@ automation:
     action:
       - service: notify.mobile_app
         data:
-          title: "New device on network"
+          title: "New {{ state_attr(trigger.event.data.entity_id, 'device_type') | default('device') }} on network"
           message: >
-            New device detected: {{ state_attr(trigger.event.data.entity_id, 'hostname') or 'Unknown' }}
+            Device: {{ state_attr(trigger.event.data.entity_id, 'hostname') or 'Unknown' }}
+            Type: {{ state_attr(trigger.event.data.entity_id, 'device_type') | default('unknown') }}
+            OS: {{ state_attr(trigger.event.data.entity_id, 'os') | default('unknown') }}
+            IP: {{ state_attr(trigger.event.data.entity_id, 'ip') }}
             MAC: {{ state_attr(trigger.event.data.entity_id, 'mac') }}
+```
+
+#### Device Type Filtering
+
+```yaml
+# Get all computers on the network
+template:
+  - sensor:
+      - name: Computers Online
+        state: >
+          {{ states.device_tracker
+             | selectattr('entity_id', 'match', 'device_tracker.lanwatch_.*')
+             | selectattr('state', 'eq', 'home')
+             | selectattr('attributes.device_type', 'eq', 'computer')
+             | list | count }}
+        attributes:
+          devices: >
+            {{ states.device_tracker
+               | selectattr('entity_id', 'match', 'device_tracker.lanwatch_.*')
+               | selectattr('state', 'eq', 'home')
+               | selectattr('attributes.device_type', 'eq', 'computer')
+               | map(attribute='name')
+               | list }}
 ```
 
 ## Technical Details
 
-- Uses ARP (Address Resolution Protocol) scanning via `scapy`
-- Stores device information persistently in Home Assistant's storage
-- Automatically creates entities for newly discovered devices
-- Tracks devices by MAC address for consistent identification
-- Performs reverse DNS lookups for device hostnames
+### Network Discovery Methods
+
+LanWatch uses multiple discovery techniques to gather comprehensive device information:
+
+1. **ARP Scanning** - Primary discovery method using `scapy`
+   - Sends ARP requests to all IPs in configured subnets
+   - Most reliable method for finding active devices
+
+2. **DHCP Monitoring** - Passive listening for DHCP packets
+   - Captures device hostnames from DHCP requests
+   - Identifies vendor class IDs for OS detection
+   - Runs for 2 seconds per scan cycle
+
+3. **mDNS/Bonjour Discovery** - Service announcement detection
+   - Identifies Apple devices, Chromecast, smart speakers
+   - Discovers HomeKit, AirPlay, and other services
+   - Supports 24+ service types
+
+4. **Port Scanning** - Limited TCP/UDP port probing
+   - Identifies device capabilities (web, SSH, SMB, etc.)
+   - Scans common ports (22, 80, 443, 445, 8080, etc.)
+   - Limited to first 10 devices to minimize impact
+
+5. **MAC OUI Analysis** - Vendor identification
+   - Uses `netaddr` library for manufacturer lookup
+   - Helps identify device types based on vendor
+
+6. **DNS Resolution** - Hostname discovery
+   - Standard reverse DNS lookups
+   - mDNS/Avahi resolution for `.local` domains
+
+### Device Intelligence
+
+The component uses sophisticated fingerprinting to identify:
+- Device types based on services, ports, and vendor
+- Operating systems from DHCP vendor classes and mDNS
+- Smart naming using DHCP hostnames and mDNS names
+- Capability detection from open ports
 
 ## Performance Considerations
 
 - **Scan Interval**: 60-120 seconds recommended for home networks
 - **Absent After**: 300 seconds (5 min) prevents false "away" states for mobile devices
-- **Network Impact**: ARP scanning is lightweight and non-intrusive
+- **Network Impact**: 
+  - ARP scanning is lightweight and non-intrusive
+  - Port scanning limited to 10 devices per cycle
+  - DHCP monitoring is passive (listen-only)
+  - Total scan time typically under 5 seconds
+
+## Privacy & Security
+
+- **Local Only**: All scanning happens within your local network
+- **Read-Only**: No packets modify device configuration
+- **Non-Intrusive**: Uses standard network protocols
+- **Data Storage**: Device information stored locally in Home Assistant
+- **DHCP Monitoring**: Requires elevated privileges (may not work in all Docker setups)
 
 ## Troubleshooting
 
@@ -179,6 +285,26 @@ tox -e py312-ha
 ### Contributing
 
 Contributions are welcome! Please open an issue first to discuss changes.
+
+## Changelog
+
+### v0.2.0 (Latest)
+- Added comprehensive device fingerprinting
+- DHCP packet monitoring for hostname and OS detection
+- TCP/UDP port scanning for service discovery
+- Enhanced mDNS/Bonjour support (24+ service types)
+- Intelligent device type classification
+- Operating system detection
+- Improved device naming using multiple data sources
+- Added device capabilities detection
+- Rich entity attributes with network service info
+
+### v0.1.0
+- Initial release
+- Basic ARP scanning
+- Device tracking with home/away states
+- MAC vendor lookup
+- Persistent device storage
 
 ## License
 

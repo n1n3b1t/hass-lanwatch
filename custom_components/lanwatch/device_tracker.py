@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.device_tracker.config_entry import TrackerEntity
+from homeassistant.components.device_tracker.config_entry import ScannerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
@@ -11,7 +11,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from . import DOMAIN, DeviceInfo as LanwatchDeviceInfo, LanwatchCoordinator
+from . import DOMAIN, LanwatchCoordinator
+from . import DeviceInfo as LanwatchDeviceInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def async_setup_entry(
     )
 
 
-class LanwatchTracker(CoordinatorEntity[LanwatchCoordinator], TrackerEntity):
+class LanwatchTracker(CoordinatorEntity[LanwatchCoordinator], ScannerEntity):
     """Representation of a LanWatch device tracker."""
     
     _attr_should_poll = False
@@ -78,6 +79,16 @@ class LanwatchTracker(CoordinatorEntity[LanwatchCoordinator], TrackerEntity):
         """Generate a meaningful device name from available information."""
         if not device_info:
             return f"Unknown {self._mac[-8:].replace(':', '')}"
+        
+        # Use DHCP hostname if available
+        if device_info.dhcp_info and device_info.dhcp_info.get("hostname"):
+            hostname = device_info.dhcp_info["hostname"]
+            # Clean up hostname
+            clean_name = hostname.replace("-", " ").replace("_", " ")
+            # Handle special cases
+            if "Valentins" in clean_name:
+                clean_name = clean_name.replace("Valentins", "Valentin's")
+            return clean_name.title()
         
         # Check for special mDNS services first
         if device_info.mdns_services:
@@ -200,11 +211,21 @@ class LanwatchTracker(CoordinatorEntity[LanwatchCoordinator], TrackerEntity):
             # Clean up vendor name
             manufacturer = info.vendor.split("(")[0].strip()
         
+        # Determine model based on device type and OS
+        model = "Network Device"
+        if info:
+            if info.device_type and info.os_hint:
+                model = f"{info.device_type.replace('_', ' ').title()} ({info.os_hint})"
+            elif info.device_type:
+                model = info.device_type.replace('_', ' ').title()
+            elif info.os_hint:
+                model = f"Device ({info.os_hint})"
+        
         return DeviceInfo(
             identifiers={(DOMAIN, self._mac)},
             name=device_name,
             manufacturer=manufacturer,
-            model="Network Device",
+            model=model,
             connections={("mac", self._mac)},
             sw_version=info.ip if info else None,
         )
@@ -260,6 +281,30 @@ class LanwatchTracker(CoordinatorEntity[LanwatchCoordinator], TrackerEntity):
         
         if info.vendor:
             attrs["vendor"] = info.vendor
+            
+        if info.device_type:
+            attrs["device_type"] = info.device_type
+            
+        if info.os_hint:
+            attrs["os"] = info.os_hint
+            
+        if info.open_ports:
+            attrs["open_ports"] = info.open_ports
+            
+        if info.capabilities:
+            attrs["capabilities"] = info.capabilities
+            
+        if info.dhcp_info:
+            if "hostname" in info.dhcp_info:
+                attrs["dhcp_hostname"] = info.dhcp_info["hostname"]
+            if "vendor_class_id" in info.dhcp_info:
+                attrs["dhcp_vendor_class"] = info.dhcp_info["vendor_class_id"]
+                
+        if info.mdns_services:
+            # Add a simplified list of mDNS service types
+            service_types = list(info.mdns_services.keys())
+            if service_types:
+                attrs["mdns_services"] = service_types
         
         # Calculate time since last seen
         time_since = dt_util.utcnow() - info.last_seen
