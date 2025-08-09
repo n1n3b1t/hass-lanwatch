@@ -3,7 +3,7 @@
   "name": "LanWatch",
   "version": "0.1.0",
   "documentation": "https://github.com/your-org/lanwatch",
-  "requirements": [],
+  "requirements": ["scapy==2.5.0", "netaddr==1.3.0"],
   "codeowners": ["@n1n3b1t"],
   "config_flow": true,
   "iot_class": "local_polling"

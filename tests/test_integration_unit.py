@@ -15,7 +15,7 @@ def test_perform_arp_scan_monkeypatched_dns_and_arp():
         return ([(None, Pkt("192.168.1.50", "AA:BB:CC:DD:EE:FF"))], None)
 
     with patch("scapy.all.arping", side_effect=fake_arping), patch(
-        "custom_components.lanwatch.__init__.socket.gethostbyaddr",
+        "socket.gethostbyaddr",
         return_value=("host1.local", [], ["192.168.1.50"]),
     ):
         pairs = perform_arp_scan(["192.168.1.0/24"])
