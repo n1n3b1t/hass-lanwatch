@@ -29,7 +29,7 @@ def test_device_info_dataclass():
         os_hint="Linux",
         open_ports=[22, 80],
         dhcp_info={"hostname": "test-device"},
-        capabilities=["ssh", "web"]
+        capabilities=["ssh", "web"],
     )
 
     assert device.ip == "192.168.1.100"
@@ -55,7 +55,7 @@ def test_perform_arp_scan_with_mock():
 
         with patch("socket.gethostbyaddr") as mock_dns:
             mock_dns.return_value = ("test-host.local", [], [])
-            
+
             with patch("custom_components.lanwatch.monitor_dhcp_packets", return_value={}):
                 results = perform_arp_scan(["192.168.1.0/24"])
 
@@ -87,9 +87,11 @@ def test_perform_arp_scan_with_dns_failure():
     def fake_arping(_net, timeout=3, verbose=0, retry=2):  # noqa: ARG001
         return ([(None, Pkt("192.168.1.50", "AA:BB:CC:DD:EE:FF"))], [])
 
-    with patch("scapy.all.arping", side_effect=fake_arping), \
-         patch("socket.gethostbyaddr", side_effect=Exception("DNS lookup failed")), \
-         patch("custom_components.lanwatch.monitor_dhcp_packets", return_value={}):
+    with (
+        patch("scapy.all.arping", side_effect=fake_arping),
+        patch("socket.gethostbyaddr", side_effect=Exception("DNS lookup failed")),
+        patch("custom_components.lanwatch.monitor_dhcp_packets", return_value={}),
+    ):
         pairs = perform_arp_scan(["192.168.1.0/24"])
         # Should still return the device with empty hostname
         assert "AA:BB:CC:DD:EE:FF" in pairs
@@ -119,9 +121,7 @@ except ImportError:
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.skipif(
-    HomeAssistant is None, reason="homeassistant test fixture not available"
-)
+@pytest.mark.skipif(HomeAssistant is None, reason="homeassistant test fixture not available")
 async def test_setup_and_entity_creation(hass: HomeAssistant) -> None:
     """Test component setup and entity creation."""
     # Fake scan results - return tuple with all new fields
