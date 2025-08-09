@@ -1,33 +1,38 @@
 #!/usr/bin/env python3
-import os, json, time, socket, hashlib
-from datetime import datetime, timedelta, timezone
+import json
+import os
+import socket
+import time
+from datetime import datetime, timedelta
 
-from netaddr import IPNetwork
-from scapy.all import conf, arping   # type: ignore
 import paho.mqtt.client as mqtt
+from netaddr import IPNetwork
+from scapy.all import arping, conf  # type: ignore
 
 # --- Env ---
-MQTT_HOST   = os.getenv("MQTT_HOST","127.0.0.1")
-MQTT_PORT   = int(os.getenv("MQTT_PORT","1883"))
-MQTT_USER   = os.getenv("MQTT_USER") or None
-MQTT_PASS   = os.getenv("MQTT_PASS") or None
-SUBNETS     = [s.strip() for s in os.getenv("SUBNETS","192.168.1.0/24").split(",") if s.strip()]
-INTERVAL    = int(os.getenv("INTERVAL_SEC","60"))
-ABSENT_AFTER= int(os.getenv("ABSENT_AFTER_SEC","300"))
-DISC_PREFIX = os.getenv("DISCOVERY_PREFIX","homeassistant").rstrip("/")
-TOP_PREFIX  = os.getenv("TOPIC_PREFIX","lanwatch").rstrip("/")
-NAME_PREFIX = os.getenv("NAME_PREFIX","LAN")
-CACHE_FILE  = os.getenv("CACHE","/app/lanwatch_cache.json")
+MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER") or None
+MQTT_PASS = os.getenv("MQTT_PASS") or None
+SUBNETS = [s.strip() for s in os.getenv("SUBNETS", "192.168.1.0/24").split(",") if s.strip()]
+INTERVAL = int(os.getenv("INTERVAL_SEC", "60"))
+ABSENT_AFTER = int(os.getenv("ABSENT_AFTER_SEC", "300"))
+DISC_PREFIX = os.getenv("DISCOVERY_PREFIX", "homeassistant").rstrip("/")
+TOP_PREFIX = os.getenv("TOPIC_PREFIX", "lanwatch").rstrip("/")
+NAME_PREFIX = os.getenv("NAME_PREFIX", "LAN")
+CACHE_FILE = os.getenv("CACHE", "/app/lanwatch_cache.json")
 
 # --- State ---
 seen = {}  # mac -> dict(ip, name, last, vendor)
-now_utc = lambda: datetime.now(timezone.utc)
+
+def now_utc() -> datetime:
+    return datetime.now(datetime.UTC)
 
 def load_cache():
     try:
-        with open(CACHE_FILE, "r") as f:
+        with open(CACHE_FILE) as f:
             raw = json.load(f)
-        for mac, v in raw.items():
+        for _mac, v in raw.items():
             v["last"] = datetime.fromisoformat(v["last"])
         seen.update(raw)
     except Exception:
@@ -35,7 +40,7 @@ def load_cache():
 
 def save_cache():
     try:
-        raw = {m:{**v, "last":v["last"].isoformat()} for m,v in seen.items()}
+        raw = {m: {**v, "last": v["last"].isoformat()} for m, v in seen.items()}
         with open(CACHE_FILE, "w") as f:
             json.dump(raw, f)
     except Exception:
@@ -43,7 +48,8 @@ def save_cache():
 
 # --- MQTT ---
 client = mqtt.Client(client_id=f"lanwatch-{os.getpid()}")
-if MQTT_USER: client.username_pw_set(MQTT_USER, MQTT_PASS)
+if MQTT_USER:
+    client.username_pw_set(MQTT_USER, MQTT_PASS)
 
 def m_pub(topic, payload, retain=False, qos=1):
     client.publish(topic, payload, qos=qos, retain=retain)
@@ -55,7 +61,7 @@ def disc_topics(uid):
     base_cfg = f"{DISC_PREFIX}/device_tracker/lan/{uid}/config"
     state = f"{TOP_PREFIX}/devices/{uid}/state"
     attrs = f"{TOP_PREFIX}/devices/{uid}/attrs"
-    cmd   = f"{TOP_PREFIX}/control/{uid}/scan"
+    cmd = f"{TOP_PREFIX}/control/{uid}/scan"
     return base_cfg, state, attrs, cmd
 
 def publish_discovery(mac, name_hint=""):
@@ -69,7 +75,7 @@ def publish_discovery(mac, name_hint=""):
         "payload_home": "home",
         "payload_not_home": "not_home",
         "source_type": "router",
-        "device": {"identifiers":[uid], "name": name_hint or f"{NAME_PREFIX} {mac}"},
+        "device": {"identifiers": [uid], "name": name_hint or f"{NAME_PREFIX} {mac}"},
     }
     m_pub(cfg_t, json.dumps(payload), retain=True)
 
@@ -78,13 +84,19 @@ def mark_home(mac, ip, name, vendor):
     _, state_t, attrs_t, _ = disc_topics(uid)
     publish_discovery(mac, name or "")
     m_pub(state_t, "home", retain=True)
-    m_pub(attrs_t, json.dumps({
-        "ip": ip,
-        "hostname": name or "",
-        "mac": mac,
-        "vendor": vendor or "",
-        "last_seen": now_utc().isoformat()
-    }), retain=True)
+    m_pub(
+        attrs_t,
+        json.dumps(
+            {
+                "ip": ip,
+                "hostname": name or "",
+                "mac": mac,
+                "vendor": vendor or "",
+                "last_seen": now_utc().isoformat(),
+            }
+        ),
+        retain=True,
+    )
 
 def mark_away(mac):
     uid = dev_uid(mac)
@@ -110,11 +122,11 @@ def scan_once():
             for _, r in ans:
                 ip = r.psrc
                 mac = getattr(r, "src_mac", None)
-                if not (ip and mac): 
+                if not (ip and mac):
                     continue
                 if mac not in hits:
                     hits[mac] = {"ip": ip}
-        except Exception as e:
+        except Exception:
             # just continue with other subnets
             continue
 
@@ -123,7 +135,6 @@ def scan_once():
         ip = item["ip"]
         name = rev_dns(ip)
         vendor = ""  # scapy doesn't always include vendor; can add OUI db later
-        prev = seen.get(mac)
         seen[mac] = {"ip": ip, "name": name, "vendor": vendor, "last": now_utc()}
         mark_home(mac, ip, name, vendor)
 
@@ -149,8 +160,8 @@ def main():
     client.connect(MQTT_HOST, MQTT_PORT, 60)
     client.loop_start()
     # initial publish for cached devices (as away)
-    for mac, v in list(seen.items()):
-        publish_discovery(mac, v.get("name") or "")
+    for mac, val in list(seen.items()):
+        publish_discovery(mac, val.get("name") or "")
         mark_away(mac)
     # main loop
     while True:
