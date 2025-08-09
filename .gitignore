@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# OS
+.DS_Store
+
+# Local config/cache (mounted into container)
+config/lanwatch_cache.json 

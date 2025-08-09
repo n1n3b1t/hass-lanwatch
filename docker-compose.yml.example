@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  lanwatch:
+    image: ghcr.io/your-org/lanwatch:latest  # or build locally with: `docker build -t lanwatch .`
+    container_name: lanwatch
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: 1883
+      MQTT_USER: ""            # set if you use auth
+      MQTT_PASS: ""            # set if you use auth
+      SUBNETS: "192.168.1.0/24" # comma-separate for more, e.g. "192.168.1.0/24,192.168.2.0/24"
+      INTERVAL_SEC: "60"       # scan every N seconds
+      ABSENT_AFTER_SEC: "300" # mark away if unseen for N sec
+      DISCOVERY_PREFIX: "homeassistant"
+      TOPIC_PREFIX: "lanwatch"
+      NAME_PREFIX: "LAN"
+    volumes:
+      - ./config/lanwatch_cache.json:/app/lanwatch_cache.json 

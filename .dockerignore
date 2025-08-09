@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+
+# Git
+.git
+.gitignore
+
+# OS / misc
+.DS_Store
+
+# Local config/cache mounted at runtime
+config/ 
