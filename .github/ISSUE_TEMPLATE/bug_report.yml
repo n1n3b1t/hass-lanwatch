@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a problem with LanWatch
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+  - type: input
+    id: version
+    attributes:
+      label: LanWatch version
+      description: Git commit or Docker tag
+      placeholder: e.g. 0.1.0 or sha
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: e.g. 2025.2
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Be as specific as possible
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Include docker logs and relevant MQTT topics/payloads if possible
+      render: shell
+  - type: input
+    id: network
+    attributes:
+      label: Network details
+      description: Subnets, VLANs, router/switch model 
