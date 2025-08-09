@@ -1,0 +1,10 @@
+{
+  "domain": "lanwatch",
+  "name": "LanWatch",
+  "version": "0.1.0",
+  "documentation": "https://github.com/your-org/lanwatch",
+  "requirements": [],
+  "codeowners": ["@n1n3b1t"],
+  "config_flow": true,
+  "iot_class": "local_polling"
+} 

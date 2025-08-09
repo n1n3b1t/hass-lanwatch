@@ -1,0 +1,19 @@
+{
+  "title": "LanWatch",
+  "config": {
+    "step": {
+      "user": {
+        "title": "LanWatch",
+        "description": "Scan subnets for devices",
+        "data": {
+          "subnets": "Subnets (comma-separated CIDRs)",
+          "interval": "Scan interval (seconds)",
+          "absent_after": "Mark away after (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_subnets": "Please provide at least one valid subnet"
+    }
+  }
+} 

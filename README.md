@@ -173,3 +173,12 @@ docker run --rm --net host \
   -v $(pwd)/config/lanwatch_cache.json:/app/lanwatch_cache.json \
   lanwatch:latest
 ``` 
+
+### Install as a Home Assistant custom component
+
+- Copy `custom_components/lanwatch` into your Home Assistant `config/custom_components/` directory.
+- Restart Home Assistant.
+- Add the integration via Settings → Devices & Services → Add Integration → LanWatch.
+- Enter your subnets, scan interval, and absent-after seconds.
+
+The integration will create `device_tracker` entities for detected MACs and keep attributes up to date. 
