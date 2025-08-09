@@ -32,6 +32,38 @@ class DeviceInfo:
     last_seen: datetime
 
 
+def perform_arp_scan(subnets: list[str]) -> dict[str, tuple[str, str]]:
+    """Scan subnets using ARP and return mapping mac -> (ip, hostname)."""
+    from netaddr import IPNetwork  # local import
+    from scapy.all import arping, conf  # type: ignore
+
+    conf.verb = 0
+    hits: dict[str, str] = {}
+    for net in subnets:
+        try:
+            str(IPNetwork(net))
+        except Exception:  # noqa: BLE001
+            continue
+        try:
+            ans, _ = arping(net, timeout=3, verbose=0)
+            for _, r in ans:
+                ip = r.psrc
+                mac = getattr(r, "src_mac", None)
+                if ip and mac and mac not in hits:
+                    hits[mac] = ip
+        except Exception:  # noqa: BLE001
+            continue
+
+    results: dict[str, tuple[str, str]] = {}
+    for mac, ip in hits.items():
+        try:
+            name = socket.gethostbyaddr(ip)[0]
+        except Exception:  # noqa: BLE001
+            name = ""
+        results[mac] = (ip, name)
+    return results
+
+
 class LanwatchCoordinator(DataUpdateCoordinator[dict[str, DeviceInfo]]):
     def __init__(
         self, hass: HomeAssistant, subnets: list[str], interval_s: int, absent_after_s: int
@@ -56,34 +88,14 @@ class LanwatchCoordinator(DataUpdateCoordinator[dict[str, DeviceInfo]]):
             return ""
 
     def _scan_once(self) -> dict[str, DeviceInfo]:
-        from netaddr import IPNetwork  # local import
-        from scapy.all import arping, conf  # type: ignore
-
-        conf.verb = 0
-        hits: dict[str, str] = {}
-        for net in self._subnets:
-            try:
-                str(IPNetwork(net))
-            except Exception:  # noqa: BLE001
-                continue
-            try:
-                ans, _ = arping(net, timeout=3, verbose=0)
-                for _, r in ans:
-                    ip = r.psrc
-                    mac = getattr(r, "src_mac", None)
-                    if ip and mac and mac not in hits:
-                        hits[mac] = ip
-            except Exception:  # noqa: BLE001
-                continue
-
+        pairs = perform_arp_scan(self._subnets)
         now = datetime.utcnow()
-        for mac, ip in hits.items():
-            name = self._rev_dns(ip)
+        for mac, (ip, name) in pairs.items():
             self._seen[mac] = DeviceInfo(ip=ip, name=name, mac=mac, last_seen=now)
 
         cutoff = now - self._absent_after
         for mac, info in list(self._seen.items()):
-            if info.last_seen < cutoff and mac not in hits:
+            if info.last_seen < cutoff and mac not in pairs:
                 # keep entry but state will be away in platform
                 pass
         return self._seen
