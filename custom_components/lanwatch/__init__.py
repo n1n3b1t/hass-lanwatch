@@ -108,7 +108,7 @@ def scan_common_ports(ip: str) -> tuple[list[int], list[str]]:
         (548, "tcp", "afp"),       # AFP/Apple shares
         (631, "tcp", "printer"),   # IPP/CUPS printing
         (3389, "tcp", "rdp"),      # Remote Desktop
-        (5000, "tcp", "synology"), # Synology DSM
+        (5000, "tcp", "airplay"),  # AirPlay (macOS) / Synology DSM
         (5353, "udp", "mdns"),     # mDNS/Bonjour
         (8080, "tcp", "web"),      # Alternative HTTP
         (8883, "tcp", "mqtt"),     # MQTT/IoT
@@ -152,6 +152,13 @@ def detect_device_type_and_os(
     """Detect device type and OS based on collected information."""
     device_type = ""
     os_hint = ""
+    
+    # Special handling: If vendor is Apple and port 5000 is open, it's likely a Mac
+    # (AirPlay Receiver), not a Synology NAS
+    if vendor and "apple" in vendor.lower() and 5000 in open_ports:
+        device_type = "computer"
+        os_hint = "macOS"
+        return device_type, os_hint
     
     # Check mDNS services first (most reliable)
     if mdns_services:
@@ -246,7 +253,6 @@ def detect_device_type_and_os(
         vendor_lower = vendor.lower()
         if "apple" in vendor_lower:
             os_hint = "iOS/macOS"
-            # MAC prefix hints for Apple devices
             # MAC prefix hints for Apple devices (older Apple TV)
             apple_tv_prefixes = (
                 "00:17:F2", "00:1B:63", "00:1E:C2", "00:1F:F3", "00:21:E9", 
@@ -258,6 +264,14 @@ def detect_device_type_and_os(
                 device_type = "tv"  # Older Apple TV
             elif mac.startswith(("F0:18:98", "F0:99:BF")):
                 device_type = "watch"
+            elif "afp" in capabilities or "airplay" in capabilities:
+                # If we see AFP or AirPlay, it's likely a Mac
+                device_type = "computer"
+                os_hint = "macOS"
+            elif open_ports and (22 in open_ports or 5000 in open_ports):
+                # SSH or port 5000 on Apple device likely means Mac
+                device_type = "computer"
+                os_hint = "macOS"
             else:
                 device_type = "phone"  # Default for Apple
                 
@@ -293,6 +307,10 @@ def detect_device_type_and_os(
             device_type = "nas"
             os_hint = "DSM"
             
+        elif "asustek" in vendor_lower or "asus" in vendor_lower:
+            # ASUS makes routers and computers
+            device_type = "network"  # Most commonly routers
+            
         elif "ubiquiti" in vendor_lower or "unifi" in vendor_lower:
             device_type = "network"
             os_hint = "UniFi"
@@ -301,12 +319,13 @@ def detect_device_type_and_os(
     if not device_type and capabilities:
         if "printer" in capabilities:
             device_type = "printer"
-        elif "synology" in capabilities:
-            device_type = "nas"
-            os_hint = "DSM"
         elif "rdp" in capabilities:
             device_type = "computer"
             os_hint = "Windows"
+        elif "afp" in capabilities or ("airplay" in capabilities and "ssh" in capabilities):
+            # AFP or AirPlay+SSH strongly indicates macOS
+            device_type = "computer"
+            os_hint = "macOS"
         elif "smb" in capabilities and "afp" in capabilities:
             device_type = "computer"
             os_hint = "macOS"
