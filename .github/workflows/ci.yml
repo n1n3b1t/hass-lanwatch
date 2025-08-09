@@ -34,7 +34,7 @@ jobs:
 
       - name: Test (pytest)
         run: |
-          pytest -q 
+          pytest -q -k "not component_hass" 
 
   ha-integration-tests:
     runs-on: ubuntu-latest
