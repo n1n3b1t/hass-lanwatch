@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.device_tracker.config_entry import TrackerEntity

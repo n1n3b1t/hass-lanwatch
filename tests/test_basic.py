@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from custom_components.lanwatch import DeviceInfo, perform_arp_scan
 from custom_components.lanwatch.const import DOMAIN
 

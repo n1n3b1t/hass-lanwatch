@@ -72,7 +72,12 @@ def perform_arp_scan(subnets: list[str]) -> dict[str, tuple[str, str]]:
 
 class LanwatchCoordinator(DataUpdateCoordinator[dict[str, DeviceInfo]]):
     def __init__(
-        self, hass: HomeAssistant, subnets: list[str], interval_s: int, absent_after_s: int, entry_id: str
+        self,
+        hass: HomeAssistant,
+        subnets: list[str],
+        interval_s: int,
+        absent_after_s: int,
+        entry_id: str,
     ) -> None:
         super().__init__(
             hass,
